@@ -40,6 +40,50 @@ def price_bond(
     return price
 
 
+def price_from_curve(
+        cashflows,
+        settlement_date,
+        spot_rates,
+        day_count="ACT/365"
+):
+    """
+    Present value of a bond's cashflows discounted off a zero-coupon spot
+    rate curve (e.g. bootstrapping.discount_factors_to_spot_rates), instead
+    of a single flat discount rate.
+
+    cashflows:
+        List of (date, amount)
+
+    spot_rates:
+        {maturity_year: annually-compounded spot rate}. Cashflow dates that
+        don't fall on a curve year are linearly interpolated between the
+        surrounding rates; dates outside the curve's range use the nearest
+        end point's rate (flat extrapolation).
+    """
+    known_years = sorted(spot_rates)
+    price = 0.0
+
+    for payment_date, amount in cashflows:
+        t = year_fraction(settlement_date, payment_date, day_count)
+        r = _interpolate_spot_rate(t, known_years, spot_rates)
+        price += amount / (1 + r) ** t
+
+    return price
+
+
+def _interpolate_spot_rate(t, known_years, spot_rates):
+    if t <= known_years[0]:
+        return spot_rates[known_years[0]]
+    if t >= known_years[-1]:
+        return spot_rates[known_years[-1]]
+
+    for y1, y2 in zip(known_years, known_years[1:]):
+        if y1 <= t <= y2:
+            r1, r2 = spot_rates[y1], spot_rates[y2]
+            weight = (t - y1) / (y2 - y1)
+            return r1 + weight * (r2 - r1)
+
+
 def accrued_interest(
         cashflows,
         settlement_date,
